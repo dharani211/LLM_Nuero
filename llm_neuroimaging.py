@@ -2,58 +2,71 @@
 #Assignment for Sprouts.AI
 import requests
 
-def fetch_neuroimaging_papers_crossref(query="neuroimaging", rows=5):
+def get_neuroimaging_publications(term="neuroimaging", count=5):
     """
-    Fetches the most recent Crossref works matching 'neuroimaging'.
+    Query Crossref for the most recent works matching the given term.
+    Returns a list of dicts containing title, authors, date, and DOI link.
     """
-    url = "https://api.crossref.org/works"
-    params = {
-        "query": query,
-        "rows": rows,
+    api_url = "https://api.crossref.org/works"
+    query_params = {
+        "query": term,
+        "rows": count,
         "sort": "published",
         "order": "desc"
     }
-    resp = requests.get(url, params=params, timeout=10)
-    resp.raise_for_status()
-    data = resp.json().get("message", {}).get("items", [])
-    papers = []
-    for item in data:
-        title = item.get("title", [""])[0]
-        doi   = item.get("DOI", "")
-        link  = f"https://doi.org/{doi}" if doi else item.get("URL", "")
-        # choose published-print date, else published-online, else skip
-        pdate = item.get("published-print", item.get("published-online", {}))
-        date_parts = pdate.get("date-parts", [[]])[0]
-        published = "-".join(str(x) for x in date_parts) if date_parts else ""
+    response = requests.get(api_url, params=query_params, timeout=10)
+    response.raise_for_status()
+    entries = response.json().get("message", {}).get("items", [])
+    
+    publications = []
+    for entry in entries:
+        # Title and DOI or fallback URL
+        title = entry.get("title", [""])[0]
+        doi   = entry.get("DOI", "")
+        link  = f"https://doi.org/{doi}" if doi else entry.get("URL", "")
+        
+        # Determine publication date
+        date_info = entry.get("published-print") or entry.get("published-online") or {}
+        parts     = date_info.get("date-parts", [[]])[0]
+        pub_date  = "-".join(str(x) for x in parts) if parts else "N/A"
+        
+        # Assemble author list
         authors = []
-        for a in item.get("author", []):
-            given = a.get("given", "")
-            family = a.get("family", "")
-            authors.append(f"{given} {family}".strip())
-        papers.append({
+        for author in entry.get("author", []):
+            given  = author.get("given", "")
+            family = author.get("family", "")
+            full_name = f"{given} {family}".strip()
+            if full_name:
+                authors.append(full_name)
+        
+        publications.append({
             "title":     title,
-            "authors":   authors,
-            "published": published,
+            "authors":   authors or ["N/A"],
+            "published": pub_date,
             "link":      link
         })
-    return papers
+    
+    return publications
+
+def display_publications(publications):
+    if not publications:
+        print("No publications found.")
+        return
+    
+    for idx, pub in enumerate(publications, start=1):
+        print(f"{idx}. {pub['title']}")
+        print(f"   • Authors:   {', '.join(pub['authors'])}")
+        print(f"   • Published: {pub['published']}")
+        print(f"   • Link:      {pub['link']}\n")
 
 def main():
     try:
-        papers = fetch_neuroimaging_papers_crossref(rows=5)
-    except Exception as e:
-        print("Error fetching from Crossref:", e)
+        pubs = get_neuroimaging_publications(count=5)
+    except Exception as err:
+        print(f"Error fetching data: {err}")
         return
-
-    if not papers:
-        print("No papers found.")
-        return
-
-    for i, p in enumerate(papers, 1):
-        print(f"{i}. {p['title']}")
-        print(f"   • Authors:   {', '.join(p['authors']) or 'N/A'}")
-        print(f"   • Published: {p['published'] or 'N/A'}")
-        print(f"   • Link:      {p['link'] or 'N/A'}\n")
+    
+    display_publications(pubs)
 
 if __name__ == "__main__":
     main()
